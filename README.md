@@ -25,7 +25,6 @@ This agent helps you summarize your study notes from a PDF file and generate a q
 ## Technologies Used
 
 - [OpenAgents SDK](https.pypi.org/project/openagent/)
-- [Streamlit](https.streamlit.io/)
 - [PyPDF2](https.pypi.org/project/PyPDF2/)
 - [Context7 MCP](https://context7.com/)
 - Gemini Model
