@@ -1,9 +1,13 @@
 [project]
-name = "task-4"
+name = "new-folder"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "chainlit>=2.9.2",
+    "google-genai>=1.52.0",
+    "openai-agents>=0.6.1",
+    "pypdf>=6.4.0",
+    "python-dotenv>=1.2.1",
+    "streamlit>=1.51.0",
 ]

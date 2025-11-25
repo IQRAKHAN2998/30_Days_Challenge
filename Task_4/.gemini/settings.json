@@ -4,17 +4,22 @@
       "selectedType": "oauth-personal"
     }
   },
-  "general": {
-    "previewFeatures": true
+  "ui": {
+    "theme": "GitHub"
   },
-
-  "mcpServers": {
+  "ide": {
+    "hasSeenNudge": true
+  },
+   "mcpServers": {
     "context7": {
       "command": "npx",
       "args": ["-y", "@upstash/context7-mcp"],
       "env": {
-        "CONTEXT7_API_KEY": "ctx7sk-e88b1457-494c-41f6-968d-d11b4cc30668"
+        "CONTEXT7_API_KEY": "process.env.CONTEXT7_API_KEY"
       }
     }
+  },
+  "general": {
+    "previewFeatures": true
   }
 }

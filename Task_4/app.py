@@ -1,96 +1,94 @@
-import os
-import asyncio
-from pathlib import Path
 import streamlit as st
-from PyPDF2 import PdfReader
-from openai_agents.core import Agent, Runner
-from openai_agents import AsyncOpenAI, OpenAIChatCompletionsModel
-from openai_agent.run import RunConfig
 from dotenv import load_dotenv
 
-# --- Load environment ---
+from modules.pdf_handler import extract_text_from_pdf
+from modules.ai_engine import generate_summary, generate_quiz
+from modules.ui_components import (
+    layout_header, upload_section, show_summary,
+    show_loader, footer
+)
+
 load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    st.error("GEMINI_API_KEY environment variable not set!")
-    st.stop()
 
-# --- Streamlit setup ---
-st.set_page_config(page_title="PDF Study Notes Agent", layout="wide")
-st.title("📚 PDF Summarizer & Quiz Generator (Gemini AI)")
+st.set_page_config(page_title="📚 Study Mate", layout="wide")
 
-uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
+layout_header()
 
-# --- Function to extract text from PDF ---
-def extract_pdf_text(file_path):
-    reader = PdfReader(file_path)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text() or ""
-    return text
+uploaded_file = upload_section()
 
-# --- Async function to run agent ---
-async def run_agent(pdf_text, num_questions=5):
-    MODEL_NAME = "gemini-2.0-flash"
 
-    # Gemini client
-    external_client = AsyncOpenAI(
-        api_key=GEMINI_API_KEY,
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        timeout=60
-    )
+# ---------------- SESSION STATE ----------------
+st.session_state.setdefault("pdf_text", None)
+st.session_state.setdefault("summary", None)
+st.session_state.setdefault("quiz_questions", None)
+st.session_state.setdefault("user_answers", {})
 
-    model = OpenAIChatCompletionsModel(
-        model=MODEL_NAME,
-        openai_client=external_client
-    )
 
-    instructions = f"""
-You are an expert AI assistant. 
-1. Summarize the following PDF text concisely and clearly:
-{pdf_text[:1000]}...
-2. Then generate a quiz with max {num_questions} multiple-choice questions based on the original PDF content. 
-Include answers for each question.
-"""
-
-    study_agent = Agent(
-        name="StudyNotesAgent",
-        instructions=instructions,
-        model=model
-    )
-
-    config = RunConfig(model=model, model_provider=external_client, tracing_disabled=True)
-
-    result = await Runner.run(study_agent, pdf_text, run_config=config)
-    return result.final_output if result and result.final_output else "No output from agent."
-
-# --- Main Streamlit workflow ---
+# ---------------- AFTER PDF UPLOAD ----------------
 if uploaded_file:
-    # Save PDF to project folder temp dir
-    temp_dir = Path(os.getcwd()) / ".gemini_tmp"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    file_path = temp_dir / uploaded_file.name
-    with open(file_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    st.success(f"File saved: {file_path.name}")
+    st.success("📄 PDF Uploaded Successfully!")
 
-    # Extract PDF text
-    pdf_text = extract_pdf_text(file_path)
-    if not pdf_text:
-        st.error("Could not extract text from PDF. Is it image-based?")
-        st.stop()
+    if not st.session_state.pdf_text:
+        st.session_state.pdf_text = extract_text_from_pdf(uploaded_file)
 
-    # Show partial PDF text
-    with st.expander("Preview PDF Text"):
-        st.text_area("PDF content", pdf_text[:1000] + ("..." if len(pdf_text) > 1000 else ""), height=300)
+    if st.button("📝 Generate Summary"):
+        with show_loader("Generating Summary..."):
+            st.session_state.summary = generate_summary(st.session_state.pdf_text)
 
-    # Number of quiz questions (max 5)
-    num_questions = st.slider("Number of Quiz Questions", 1, 5, 5)
+    if st.session_state.summary:
+        show_summary(st.session_state.summary)
 
-    if st.button("Generate Summary & Quiz"):
-        with st.spinner("Generating summary and quiz..."):
-            output = asyncio.run(run_agent(pdf_text, num_questions))
-            st.markdown(
-                f"<div style='border:1px solid #ddd;padding:10px;border-radius:8px'>{output}</div>",
-                unsafe_allow_html=True
+        if st.button("🧠 Generate MCQs"):
+            with show_loader("Generating Quiz..."):
+                raw_quiz = generate_quiz(st.session_state.pdf_text, "Multiple Choice")
+
+                questions = []
+                for block in raw_quiz.split("\n\n"):
+                    lines = [l.strip() for l in block.split("\n") if l.strip()]
+                    if len(lines) >= 6 and "A)" in block:
+                        questions.append({
+                            "question": lines[0],
+                            "options": lines[1:5],
+                            "answer": lines[-1].replace("Answer:", "").strip()
+                        })
+
+                st.session_state.quiz_questions = questions
+
+
+    # --------------- RENDER QUIZ ----------------
+    if st.session_state.quiz_questions:
+
+        st.subheader("📝 Quiz Section:")
+
+        for idx, q in enumerate(st.session_state.quiz_questions):
+            st.write(f"**{idx+1}. {q['question']}**")
+
+            selected = st.radio(
+                f"Choose answer:",
+                q["options"],
+                key=f"q{idx}"
             )
+            st.session_state.user_answers[idx] = selected
+
+        if st.button("✅ Submit Quiz"):
+            score = 0
+
+            st.subheader("📌 Results:")
+
+            for i, q in enumerate(st.session_state.quiz_questions):
+                user = st.session_state.user_answers.get(i)
+                correct = q["answer"]
+
+                user_answer_clean = user.split(")")[0].strip()[0] if user else ""
+                correct_clean = correct.strip()
+
+                if user_answer_clean.lower() == correct_clean.lower():
+                    st.success(f"✔ Q{i+1}: Correct!")
+                    score += 1
+                else:
+                    st.error(f"❌ Q{i+1}: Wrong — Correct Answer: {correct}")
+
+            st.info(f"🎯 Final Score: {score} / {len(st.session_state.quiz_questions)}")
+
+
+footer()
